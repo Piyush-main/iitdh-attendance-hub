@@ -1,16 +1,29 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useAuth } from '@/contexts/AuthContext';
+import LoginPage from './LoginPage';
+import StudentDashboard from './StudentDashboard';
+import ProfessorDashboard from './ProfessorDashboard';
+import DashboardSkeleton from '@/components/DashboardSkeleton';
 
-// IMPORTANT: Fully REPLACE this with your own code
-const PlaceholderIndex = () => {
-  // PLACEHOLDER: Replace this entire return statement with the user's app.
-  // The inline background color is intentionally not part of the design system.
+const Index = () => {
+  const { session, role, loading } = useAuth();
+
+  if (loading) return <DashboardSkeleton />;
+  if (!session) return <LoginPage />;
+
+  if (role === 'student') return <StudentDashboard />;
+  if (role === 'professor') return <ProfessorDashboard />;
+
+  // User authenticated but not found in students or profs tables
   return (
-    <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: '#fcfbf8' }}>
-      <img data-lovable-blank-page-placeholder="REMOVE_THIS" src="/placeholder.svg" alt="Your app will live here!" />
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="text-center space-y-3">
+        <h1 className="text-xl font-bold text-foreground">Account Not Found</h1>
+        <p className="text-muted-foreground text-sm max-w-sm">
+          Your email is not registered as a student or professor. Please contact the administration.
+        </p>
+      </div>
     </div>
   );
 };
-
-const Index = PlaceholderIndex;
 
 export default Index;
