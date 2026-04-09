@@ -333,7 +333,7 @@ const ProfessorDashboard = () => {
               <div className="space-y-2">
                 {sortedStudents.map(s => {
                   const pct = s.total_classes > 0 ? (s.attended / s.total_classes) * 100 : 0;
-                  const isExpanded = expandedStudent === s.student_id;
+                  const pct = Math.min(Math.round(rawPct), 100);
                   return (
                     <Card key={s.student_id} className="border-border/50">
                       <div
