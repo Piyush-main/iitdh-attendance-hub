@@ -104,6 +104,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (err) {
       console.error("🔥 AuthContext: Critical failure during detectRole:", err);
       setRole(null);
+    } finally {
+      // THE FIX: This runs no matter what, forcing the skeleton to disappear!
+      setLoading(false);
     }
   };
 
@@ -119,8 +122,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setRole(null);
           setStudentData(null);
           setProfData(null);
+          setLoading(false);
         }
-        setLoading(false);
       }
     );
 
@@ -129,8 +132,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(session?.user ?? null);
       if (session?.user?.email) {
         await detectRole(session.user.email);
-      } 
-      setLoading(false); 
+      } else {
+        setLoading(false); 
+      }
     });
 
     return () => subscription.unsubscribe();
