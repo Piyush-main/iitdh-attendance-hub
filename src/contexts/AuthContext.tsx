@@ -111,21 +111,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    async (event, session) => {
+      console.log("🔄 Auth Event:", event); // This log will tell you what's happening
+      setSession(session);
+      setUser(session?.user ?? null);
 
-        if (session?.user?.email) {
-          await detectRole(session.user.email);
-        } else {
-          setRole(null);
-          setStudentData(null);
-          setProfData(null);
-          setLoading(false);
-        }
+      if (session?.user?.email) {
+        await detectRole(session.user.email);
+      } else {
+        setRole(null);
+        setLoading(false); // Make sure this is here!
       }
-    );
+    }
+  );
+  // ... rest of code
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
