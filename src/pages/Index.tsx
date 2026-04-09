@@ -10,8 +10,8 @@ const Index = () => {
   if (loading) return <DashboardSkeleton />;
   if (!session) return <LoginPage />;
 
-  if (role === 'student') return <StudentDashboard />;
-  if (role === 'professor') return <ProfessorDashboard />;
+  if (role === 'students') return <StudentDashboard />;
+  if (role === 'profs') return <ProfessorDashboard />;
 
   // User authenticated but not found in students or profs tables
   return (
