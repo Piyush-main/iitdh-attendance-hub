@@ -129,9 +129,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(session?.user ?? null);
       if (session?.user?.email) {
         await detectRole(session.user.email);
-      } else {
-         setLoading(false);
-      }
+      } 
+      setLoading(false); 
     });
 
     return () => subscription.unsubscribe();
