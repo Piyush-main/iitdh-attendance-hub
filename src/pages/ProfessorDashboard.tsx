@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogOut, BookOpen, Users, UserPlus, ChevronDown, ChevronUp, CheckCircle2, XCircle, Search, ArrowUpDown, Loader2, Plus, Minus } from 'lucide-react';
+import { LogOut, BookOpen, Users, UserPlus, ChevronDown, ChevronUp, CheckCircle2, XCircle, Search, ArrowUpDown, Loader2 } from 'lucide-react';
 import AttendanceRing from '@/components/AttendanceRing';
 
 interface Course {
@@ -50,8 +50,6 @@ const ProfessorDashboard = () => {
   const [sortAsc, setSortAsc] = useState(true);
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
   const [studentAttendance, setStudentAttendance] = useState<Record<string, AttendanceRecord[]>>({});
-  
-  // New: Roster Search State
   const [rosterSearch, setRosterSearch] = useState('');
 
   // Enroll modal
@@ -99,7 +97,7 @@ const ProfessorDashboard = () => {
     setRosterLoading(true);
     setExpandedStudent(null);
     setStudentAttendance({});
-    setRosterSearch(''); // Clear search when switching courses
+    setRosterSearch('');
 
     const { data: enrollments } = await supabase
       .from('course_enrollments')
@@ -142,34 +140,57 @@ const ProfessorDashboard = () => {
     setRosterLoading(false);
   };
 
-  // Manual Attendance Adjustment Logic
-  const adjustAttendance = async (studentId: string, increment: boolean) => {
+  // Toggle Function: Flips status for a specific date
+  const toggleAttendance = async (studentId: string, date: string, isPresent: boolean) => {
     if (!selectedCourse) return;
-    
-    if (increment) {
-      // Add a manual record for "Today"
+
+    if (isPresent) {
+      // Remove record (Mark Absent)
+      await supabase
+        .from('attendance')
+        .delete()
+        .eq('student_id', studentId)
+        .eq('course_code', selectedCourse.course_code)
+        .eq('session_date', date);
+    } else {
+      // Add record (Mark Present)
       await supabase.from('attendance').insert({
         student_id: studentId,
         course_code: selectedCourse.course_code,
-        session_date: new Date().toISOString().split('T')[0]
+        session_date: date
       });
-    } else {
-      // Find the most recent record to delete
-      const { data: latest } = await supabase
-        .from('attendance')
-        .select('attendance_id')
-        .eq('student_id', studentId)
-        .eq('course_code', selectedCourse.course_code)
-        .order('session_date', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (latest) {
-        await supabase.from('attendance').delete().eq('attendance_id', latest.attendance_id);
-      }
     }
-    // Refresh the roster to show updated counts
-    openCourseDetail(selectedCourse);
+
+    // Update local data without full page reload
+    const { data: presentSessions } = await supabase
+      .from('attendance')
+      .select('session_date')
+      .eq('course_code', selectedCourse.course_code)
+      .eq('student_id', studentId);
+
+    const presentDates = new Set(presentSessions?.map(s => s.session_date) || []);
+    
+    // Recalculate logs for this student
+    const { data: allSessions } = await supabase
+      .from('attendance')
+      .select('session_date')
+      .eq('course_code', selectedCourse.course_code);
+    
+    const allDates = [...new Set(allSessions?.map(s => s.session_date) || [])].sort();
+
+    setStudentAttendance(prev => ({
+      ...prev,
+      [studentId]: allDates.map(d => ({ date: d, present: presentDates.has(d) })),
+    }));
+
+    // Update the main list counts/percentages
+    const updatedStudents = students.map(s => {
+      if (s.student_id === studentId) {
+        return { ...s, attended: isPresent ? s.attended - 1 : s.attended + 1 };
+      }
+      return s;
+    });
+    setStudents(updatedStudents);
   };
 
   const toggleStudentDetail = async (studentId: string) => {
@@ -199,7 +220,6 @@ const ProfessorDashboard = () => {
     }));
   };
 
-  // Filtered and Sorted list
   const filteredAndSortedStudents = students
     .filter(s => 
       `${s.first_name} ${s.last_name}`.toLowerCase().includes(rosterSearch.toLowerCase()) ||
@@ -229,7 +249,6 @@ const ProfessorDashboard = () => {
   const enrollStudent = async (student: SearchStudent) => {
     if (!selectedCourse) return;
     setEnrolling(true);
-    setEnrollError('');
     const { data: existing } = await supabase
       .from('course_enrollments')
       .select('enrollment_id')
@@ -291,12 +310,10 @@ const ProfessorDashboard = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {[1, 2, 3].map(i => <Skeleton key={i} className="h-36 rounded-xl" />)}
               </div>
-            ) : courses.length === 0 ? (
-              <Card><CardContent className="py-12 text-center text-muted-foreground">No courses assigned.</CardContent></Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {courses.map(course => (
-                  <Card key={course.course_code} className="cursor-pointer hover:shadow-md transition-shadow border-border/50" onClick={() => openCourseDetail(course)}>
+                  <Card key={course.course_code} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => openCourseDetail(course)}>
                     <CardHeader className="pb-2">
                       <p className="text-xs font-mono text-accent">{course.course_code}</p>
                       <CardTitle className="text-base">{course.course_name}</CardTitle>
@@ -321,12 +338,11 @@ const ProfessorDashboard = () => {
                   <ArrowUpDown className="w-4 h-4 mr-1" /> Sort {sortAsc ? '↑' : '↓'}
                 </Button>
                 <Button size="sm" onClick={() => setEnrollOpen(true)}>
-                  <UserPlus className="w-4 h-4 mr-1" /> Enroll
+                  <UserPlus className="w-4 h-4 mr-1" /> Enroll Student
                 </Button>
               </div>
             </div>
 
-            {/* Roster Search Bar */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input 
@@ -337,69 +353,65 @@ const ProfessorDashboard = () => {
               />
             </div>
 
-            {rosterLoading ? (
-              <div className="space-y-2">
-                {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 rounded-lg" />)}
-              </div>
-            ) : filteredAndSortedStudents.length === 0 ? (
-              <Card><CardContent className="py-12 text-center text-muted-foreground">No matches found.</CardContent></Card>
-            ) : (
-              <div className="space-y-2">
-                {filteredAndSortedStudents.map(s => {
-                  // Percentage FIX: Rounding and Capping at 100%
-                  const rawPct = s.total_classes > 0 ? (s.attended / s.total_classes) * 100 : 0;
-                  const pct = Math.min(Math.round(rawPct), 100);
-                  const isExpanded = expandedStudent === s.student_id;
-                  
-                  return (
-                    <Card key={s.student_id} className="border-border/50">
-                      <div className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/30" onClick={() => toggleStudentDetail(s.student_id)}>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm truncate">{s.first_name} {s.last_name}</p>
-                          <p className="text-xs text-muted-foreground">{s.student_id} · {s.attended}/{s.total_classes} Classes</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <AttendanceRing percentage={pct} size={44} strokeWidth={4} />
-                          {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-                        </div>
+            <div className="space-y-2">
+              {filteredAndSortedStudents.map(s => {
+                const rawPct = s.total_classes > 0 ? (s.attended / s.total_classes) * 100 : 0;
+                const pct = Math.min(Math.round(rawPct), 100);
+                const isExpanded = expandedStudent === s.student_id;
+                
+                return (
+                  <Card key={s.student_id} className="border-border/50">
+                    <div className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/30" onClick={() => toggleStudentDetail(s.student_id)}>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{s.first_name} {s.last_name}</p>
+                        <p className="text-xs text-muted-foreground">{s.student_id} · {s.attended}/{s.total_classes} Classes</p>
                       </div>
-                      
-                      {isExpanded && (
-                        <CardContent className="pt-0 pb-3 px-4 border-t mt-1">
-                          {/* Manual Attendance Controls */}
-                          <div className="flex items-center justify-between py-3 border-b mb-2">
-                             <span className="text-xs font-semibold uppercase text-muted-foreground">Manual Override</span>
-                             <div className="flex items-center gap-2">
-                                <Button variant="outline" size="sm" className="h-8 px-2 text-destructive" onClick={(e) => { e.stopPropagation(); adjustAttendance(s.student_id, false); }}>
-                                   <Minus className="w-3.5 h-3.5 mr-1" /> Remove
-                                </Button>
-                                <Button variant="outline" size="sm" className="h-8 px-2 text-success" onClick={(e) => { e.stopPropagation(); adjustAttendance(s.student_id, true); }}>
-                                   <Plus className="w-3.5 h-3.5 mr-1" /> Add
-                                </Button>
-                             </div>
-                          </div>
-
-                          <div className="space-y-1">
-                            {!studentAttendance[s.student_id] ? (
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground py-2"><Loader2 className="w-3 h-3 animate-spin" /> Loading logs...</div>
-                            ) : studentAttendance[s.student_id].length === 0 ? (
-                              <p className="text-xs text-muted-foreground py-2">No logs found.</p>
-                            ) : (
-                              studentAttendance[s.student_id].map(r => (
-                                <div key={r.date} className="flex items-center justify-between py-1 px-2 text-xs">
-                                  <span>{new Date(r.date).toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-                                  {r.present ? <span className="text-success flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Present</span> : <span className="text-destructive flex items-center gap-1"><XCircle className="w-3 h-3" /> Absent</span>}
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        </CardContent>
-                      )}
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
+                      <div className="flex items-center gap-3">
+                        <AttendanceRing percentage={pct} size={44} strokeWidth={4} />
+                        {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                      </div>
+                    </div>
+                    
+                    {isExpanded && (
+                      <CardContent className="pt-0 pb-3 px-4 border-t mt-1">
+                        <p className="text-[10px] font-bold uppercase text-muted-foreground mb-2 mt-2">Logs (Tap to toggle status)</p>
+                        <div className="space-y-1">
+                          {!studentAttendance[s.student_id] ? (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground py-2"><Loader2 className="w-3 h-3 animate-spin" /> Loading...</div>
+                          ) : studentAttendance[s.student_id].length === 0 ? (
+                            <p className="text-xs text-muted-foreground py-2">No logs found.</p>
+                          ) : (
+                            studentAttendance[s.student_id].map(r => (
+                              <div 
+                                key={r.date} 
+                                className="flex items-center justify-between py-2 px-3 rounded-md bg-muted/20 hover:bg-muted/40 cursor-pointer transition-all"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleAttendance(s.student_id, r.date, r.present);
+                                }}
+                              >
+                                <span className="text-xs">
+                                  {new Date(r.date).toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                </span>
+                                {r.present ? (
+                                  <span className="text-success flex items-center gap-1 text-[10px] font-bold underline decoration-2 underline-offset-4">
+                                    <CheckCircle2 className="w-3 h-3" /> PRESENT
+                                  </span>
+                                ) : (
+                                  <span className="text-destructive flex items-center gap-1 text-[10px] font-bold underline decoration-2 underline-offset-4">
+                                    <XCircle className="w-3 h-3" /> ABSENT
+                                  </span>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </CardContent>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
           </>
         )}
       </main>
@@ -421,7 +433,7 @@ const ProfessorDashboard = () => {
                     <p className="font-bold">{s.first_name} {s.last_name}</p>
                     <p className="text-muted-foreground">{s.student_id}</p>
                   </div>
-                  <Button size="sm" className="h-8" onClick={() => enrollStudent(s)} disabled={enrolling}>Enroll</Button>
+                  <Button size="sm" onClick={() => enrollStudent(s)} disabled={enrolling}>Enroll</Button>
                 </div>
               ))}
             </div>
