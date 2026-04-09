@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogOut, BookOpen, Users, UserPlus, ChevronDown, ChevronUp, CheckCircle2, XCircle, Search, ArrowUpDown, Loader2 } from 'lucide-react';
+import { LogOut, BookOpen, Users, UserPlus, ChevronDown, ChevronUp, CheckCircle2, XCircle, Search, ArrowUpDown, Loader2, Plus, Minus } from 'lucide-react';
 import AttendanceRing from '@/components/AttendanceRing';
 
 interface Course {
@@ -50,6 +50,9 @@ const ProfessorDashboard = () => {
   const [sortAsc, setSortAsc] = useState(true);
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
   const [studentAttendance, setStudentAttendance] = useState<Record<string, AttendanceRecord[]>>({});
+  
+  // New: Roster Search State
+  const [rosterSearch, setRosterSearch] = useState('');
 
   // Enroll modal
   const [enrollOpen, setEnrollOpen] = useState(false);
@@ -96,8 +99,8 @@ const ProfessorDashboard = () => {
     setRosterLoading(true);
     setExpandedStudent(null);
     setStudentAttendance({});
+    setRosterSearch(''); // Clear search when switching courses
 
-    // Get enrolled students
     const { data: enrollments } = await supabase
       .from('course_enrollments')
       .select('student_id')
@@ -111,13 +114,11 @@ const ProfessorDashboard = () => {
     }
 
     const studentIds = enrollments.map(e => e.student_id);
-
     const { data: studentData } = await supabase
       .from('students')
       .select('student_id, first_name, last_name, dept, program, year')
       .in('student_id', studentIds);
 
-    // Get total classes for this course
     const { data: allSessions } = await supabase
       .from('attendance')
       .select('session_date')
@@ -126,7 +127,6 @@ const ProfessorDashboard = () => {
     const uniqueDates = new Set(allSessions?.map(s => s.session_date) || []);
     const totalClasses = uniqueDates.size;
 
-    // Get attendance per student
     const rows: StudentRow[] = [];
     for (const s of (studentData || [])) {
       const { data: attended } = await supabase
@@ -142,23 +142,50 @@ const ProfessorDashboard = () => {
     setRosterLoading(false);
   };
 
+  // Manual Attendance Adjustment Logic
+  const adjustAttendance = async (studentId: string, increment: boolean) => {
+    if (!selectedCourse) return;
+    
+    if (increment) {
+      // Add a manual record for "Today"
+      await supabase.from('attendance').insert({
+        student_id: studentId,
+        course_code: selectedCourse.course_code,
+        session_date: new Date().toISOString().split('T')[0]
+      });
+    } else {
+      // Find the most recent record to delete
+      const { data: latest } = await supabase
+        .from('attendance')
+        .select('attendance_id')
+        .eq('student_id', studentId)
+        .eq('course_code', selectedCourse.course_code)
+        .order('session_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latest) {
+        await supabase.from('attendance').delete().eq('attendance_id', latest.attendance_id);
+      }
+    }
+    // Refresh the roster to show updated counts
+    openCourseDetail(selectedCourse);
+  };
+
   const toggleStudentDetail = async (studentId: string) => {
     if (expandedStudent === studentId) {
       setExpandedStudent(null);
       return;
     }
     setExpandedStudent(studentId);
-
     if (studentAttendance[studentId]) return;
 
-    // Fetch date-wise attendance
     const { data: allSessions } = await supabase
       .from('attendance')
       .select('session_date')
       .eq('course_code', selectedCourse!.course_code);
 
     const allDates = [...new Set(allSessions?.map(s => s.session_date) || [])].sort();
-
     const { data: presentSessions } = await supabase
       .from('attendance')
       .select('session_date')
@@ -166,32 +193,35 @@ const ProfessorDashboard = () => {
       .eq('student_id', studentId);
 
     const presentDates = new Set(presentSessions?.map(s => s.session_date) || []);
-
     setStudentAttendance(prev => ({
       ...prev,
       [studentId]: allDates.map(date => ({ date, present: presentDates.has(date) })),
     }));
   };
 
-  const sortedStudents = [...students].sort((a, b) => {
-    const pctA = a.total_classes > 0 ? a.attended / a.total_classes : 0;
-    const pctB = b.total_classes > 0 ? b.attended / b.total_classes : 0;
-    return sortAsc ? pctA - pctB : pctB - pctA;
-  });
+  // Filtered and Sorted list
+  const filteredAndSortedStudents = students
+    .filter(s => 
+      `${s.first_name} ${s.last_name}`.toLowerCase().includes(rosterSearch.toLowerCase()) ||
+      s.student_id.toLowerCase().includes(rosterSearch.toLowerCase())
+    )
+    .sort((a, b) => {
+      const pctA = a.total_classes > 0 ? a.attended / a.total_classes : 0;
+      const pctB = b.total_classes > 0 ? b.attended / b.total_classes : 0;
+      return sortAsc ? pctA - pctB : pctB - pctA;
+    });
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
     setEnrollError('');
     setEnrollSuccess('');
     if (query.length < 2) { setSearchResults([]); return; }
-
     setSearchLoading(true);
     const { data } = await supabase
       .from('students')
       .select('student_id, first_name, last_name, dept, program, year')
       .or(`student_id.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%`)
       .limit(10);
-
     setSearchResults(data || []);
     setSearchLoading(false);
   };
@@ -200,9 +230,6 @@ const ProfessorDashboard = () => {
     if (!selectedCourse) return;
     setEnrolling(true);
     setEnrollError('');
-    setEnrollSuccess('');
-
-    // Check if already enrolled
     const { data: existing } = await supabase
       .from('course_enrollments')
       .select('enrollment_id')
@@ -211,7 +238,7 @@ const ProfessorDashboard = () => {
       .maybeSingle();
 
     if (existing) {
-      setEnrollError('Student already enrolled in this course.');
+      setEnrollError('Student already enrolled.');
       setEnrolling(false);
       return;
     }
@@ -228,8 +255,7 @@ const ProfessorDashboard = () => {
     if (error) {
       setEnrollError(error.message);
     } else {
-      setEnrollSuccess(`${student.first_name} ${student.last_name} enrolled successfully!`);
-      // Refresh roster
+      setEnrollSuccess(`${student.first_name} enrolled!`);
       openCourseDetail(selectedCourse);
       fetchCourses();
     }
@@ -266,29 +292,17 @@ const ProfessorDashboard = () => {
                 {[1, 2, 3].map(i => <Skeleton key={i} className="h-36 rounded-xl" />)}
               </div>
             ) : courses.length === 0 ? (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <BookOpen className="w-12 h-12 mx-auto text-muted-foreground/40 mb-3" />
-                  <p className="text-muted-foreground">No courses assigned.</p>
-                </CardContent>
-              </Card>
+              <Card><CardContent className="py-12 text-center text-muted-foreground">No courses assigned.</CardContent></Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {courses.map(course => (
-                  <Card
-                    key={course.course_code}
-                    className="cursor-pointer hover:shadow-md transition-shadow border-border/50"
-                    onClick={() => openCourseDetail(course)}
-                  >
+                  <Card key={course.course_code} className="cursor-pointer hover:shadow-md transition-shadow border-border/50" onClick={() => openCourseDetail(course)}>
                     <CardHeader className="pb-2">
                       <p className="text-xs font-mono text-accent">{course.course_code}</p>
                       <CardTitle className="text-base">{course.course_name}</CardTitle>
                     </CardHeader>
-                    <CardContent>
-                      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                        <Users className="w-4 h-4" />
-                        {course.enrolled_count} students
-                      </div>
+                    <CardContent className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                      <Users className="w-4 h-4" /> {course.enrolled_count} students
                     </CardContent>
                   </Card>
                 ))}
@@ -299,86 +313,82 @@ const ProfessorDashboard = () => {
           <>
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
-                <Button variant="ghost" size="sm" onClick={() => setSelectedCourse(null)} className="mb-1">
-                  ← Back to Courses
-                </Button>
-                <h2 className="text-lg font-semibold">
-                  <span className="text-accent font-mono text-sm">{selectedCourse.course_code}</span>{' '}
-                  {selectedCourse.course_name}
-                </h2>
+                <Button variant="ghost" size="sm" onClick={() => setSelectedCourse(null)} className="mb-1">← Back</Button>
+                <h2 className="text-lg font-semibold">{selectedCourse.course_name}</h2>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={() => setSortAsc(!sortAsc)}>
-                  <ArrowUpDown className="w-4 h-4 mr-1" />
-                  Sort {sortAsc ? '↑' : '↓'}
+                  <ArrowUpDown className="w-4 h-4 mr-1" /> Sort {sortAsc ? '↑' : '↓'}
                 </Button>
-                <Button size="sm" onClick={() => { setEnrollOpen(true); setSearchQuery(''); setSearchResults([]); setEnrollError(''); setEnrollSuccess(''); }}>
-                  <UserPlus className="w-4 h-4 mr-1" /> Enroll Student
+                <Button size="sm" onClick={() => setEnrollOpen(true)}>
+                  <UserPlus className="w-4 h-4 mr-1" /> Enroll
                 </Button>
               </div>
             </div>
 
+            {/* Roster Search Bar */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input 
+                placeholder="Search students in this class..." 
+                className="pl-9"
+                value={rosterSearch}
+                onChange={(e) => setRosterSearch(e.target.value)}
+              />
+            </div>
+
             {rosterLoading ? (
               <div className="space-y-2">
-                {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-16 rounded-lg" />)}
+                {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 rounded-lg" />)}
               </div>
-            ) : students.length === 0 ? (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <Users className="w-12 h-12 mx-auto text-muted-foreground/40 mb-3" />
-                  <p className="text-muted-foreground">No students enrolled yet.</p>
-                </CardContent>
-              </Card>
+            ) : filteredAndSortedStudents.length === 0 ? (
+              <Card><CardContent className="py-12 text-center text-muted-foreground">No matches found.</CardContent></Card>
             ) : (
               <div className="space-y-2">
-                {sortedStudents.map(s => {
-                  const pct = s.total_classes > 0 ? (s.attended / s.total_classes) * 100 : 0;
+                {filteredAndSortedStudents.map(s => {
+                  // Percentage FIX: Rounding and Capping at 100%
+                  const rawPct = s.total_classes > 0 ? (s.attended / s.total_classes) * 100 : 0;
                   const pct = Math.min(Math.round(rawPct), 100);
-
                   const isExpanded = expandedStudent === s.student_id;
+                  
                   return (
                     <Card key={s.student_id} className="border-border/50">
-                      <div
-                        className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/30"
-                        onClick={() => toggleStudentDetail(s.student_id)}
-                      >
+                      <div className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/30" onClick={() => toggleStudentDetail(s.student_id)}>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm truncate">
-                            {s.first_name} {s.last_name}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {s.student_id} · {s.dept} · {s.program}
-                          </p>
+                          <p className="font-medium text-sm truncate">{s.first_name} {s.last_name}</p>
+                          <p className="text-xs text-muted-foreground">{s.student_id} · {s.attended}/{s.total_classes} Classes</p>
                         </div>
                         <div className="flex items-center gap-3">
                           <AttendanceRing percentage={pct} size={44} strokeWidth={4} />
                           {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
                         </div>
                       </div>
+                      
                       {isExpanded && (
-                        <CardContent className="pt-0 pb-3 px-4">
-                          <div className="border-t pt-2 space-y-1">
+                        <CardContent className="pt-0 pb-3 px-4 border-t mt-1">
+                          {/* Manual Attendance Controls */}
+                          <div className="flex items-center justify-between py-3 border-b mb-2">
+                             <span className="text-xs font-semibold uppercase text-muted-foreground">Manual Override</span>
+                             <div className="flex items-center gap-2">
+                                <Button variant="outline" size="sm" className="h-8 px-2 text-destructive" onClick={(e) => { e.stopPropagation(); adjustAttendance(s.student_id, false); }}>
+                                   <Minus className="w-3.5 h-3.5 mr-1" /> Remove
+                                </Button>
+                                <Button variant="outline" size="sm" className="h-8 px-2 text-success" onClick={(e) => { e.stopPropagation(); adjustAttendance(s.student_id, true); }}>
+                                   <Plus className="w-3.5 h-3.5 mr-1" /> Add
+                                </Button>
+                             </div>
+                          </div>
+
+                          <div className="space-y-1">
                             {!studentAttendance[s.student_id] ? (
-                              <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-                                <Loader2 className="w-4 h-4 animate-spin" /> Loading...
-                              </div>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground py-2"><Loader2 className="w-3 h-3 animate-spin" /> Loading logs...</div>
                             ) : studentAttendance[s.student_id].length === 0 ? (
-                              <p className="text-sm text-muted-foreground py-2">No classes held yet.</p>
+                              <p className="text-xs text-muted-foreground py-2">No logs found.</p>
                             ) : (
                               studentAttendance[s.student_id].map(r => (
-                                <div key={r.date} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted/30">
-                                  <span className="text-xs">
-                                    {new Date(r.date).toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' })}
-                                  </span>
-                                  {r.present ? (
-                                    <span className="flex items-center gap-1 text-success text-xs font-medium">
-                                      <CheckCircle2 className="w-3.5 h-3.5" /> Present
-                                    </span>
-                                  ) : (
-                                    <span className="flex items-center gap-1 text-destructive text-xs font-medium">
-                                      <XCircle className="w-3.5 h-3.5" /> Absent
-                                    </span>
-                                  )}
+                                <div key={r.date} className="flex items-center justify-between py-1 px-2 text-xs">
+                                  <span>{new Date(r.date).toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                                  {r.present ? <span className="text-success flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Present</span> : <span className="text-destructive flex items-center gap-1"><XCircle className="w-3 h-3" /> Absent</span>}
                                 </div>
                               ))
                             )}
@@ -394,49 +404,27 @@ const ProfessorDashboard = () => {
         )}
       </main>
 
-      {/* Enroll Student Modal */}
       <Dialog open={enrollOpen} onOpenChange={setEnrollOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Enroll Student</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
+        <DialogContent>
+          <DialogHeader><DialogTitle>Enroll Student</DialogTitle></DialogHeader>
+          <div className="space-y-4 pt-2">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by student ID or name..."
-                value={searchQuery}
-                onChange={e => handleSearch(e.target.value)}
-                className="pl-9"
-              />
+              <Input placeholder="ID or Name..." value={searchQuery} onChange={e => handleSearch(e.target.value)} className="pl-9" />
             </div>
-
-            {enrollError && <p className="text-sm text-destructive font-medium">{enrollError}</p>}
-            {enrollSuccess && <p className="text-sm text-success font-medium">{enrollSuccess}</p>}
-
-            {searchLoading ? (
-              <div className="space-y-2">
-                {[1, 2].map(i => <Skeleton key={i} className="h-16" />)}
-              </div>
-            ) : searchResults.length > 0 ? (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {searchResults.map(s => (
-                  <div key={s.student_id} className="flex items-center justify-between p-3 rounded-lg border border-border/50 hover:bg-muted/30">
-                    <div>
-                      <p className="font-medium text-sm">{s.first_name} {s.last_name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {s.student_id} · {s.dept} · {s.program} · Year {s.year}
-                      </p>
-                    </div>
-                    <Button size="sm" onClick={() => enrollStudent(s)} disabled={enrolling}>
-                      {enrolling ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Enroll'}
-                    </Button>
+            {enrollError && <p className="text-xs text-destructive">{enrollError}</p>}
+            {enrollSuccess && <p className="text-xs text-success">{enrollSuccess}</p>}
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {searchResults.map(s => (
+                <div key={s.student_id} className="flex items-center justify-between p-2 border rounded-md">
+                  <div className="text-xs">
+                    <p className="font-bold">{s.first_name} {s.last_name}</p>
+                    <p className="text-muted-foreground">{s.student_id}</p>
                   </div>
-                ))}
-              </div>
-            ) : searchQuery.length >= 2 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">Student not found.</p>
-            ) : null}
+                  <Button size="sm" className="h-8" onClick={() => enrollStudent(s)} disabled={enrolling}>Enroll</Button>
+                </div>
+              ))}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
