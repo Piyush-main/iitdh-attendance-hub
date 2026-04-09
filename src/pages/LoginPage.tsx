@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +11,56 @@ const LoginPage = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+  const handleGoogleCredential = useCallback(async (response: any) => {
+    setGoogleLoading(true);
+    setError('');
+    try {
+      const { error: authError } = await supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: response.credential,
+      });
+      if (authError) {
+        setError(authError.message);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Google sign-in failed');
+    } finally {
+      setGoogleLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID) return;
+
+    const initGoogle = () => {
+      if (!(window as any).google?.accounts) return;
+      (window as any).google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleCredential,
+        auto_select: true,
+        cancel_on_tap_outside: false,
+        context: 'signin',
+        itp_support: true,
+      });
+      (window as any).google.accounts.id.prompt();
+    };
+
+    if ((window as any).google?.accounts) {
+      initGoogle();
+    } else {
+      const interval = setInterval(() => {
+        if ((window as any).google?.accounts) {
+          clearInterval(interval);
+          initGoogle();
+        }
+      }, 100);
+      return () => clearInterval(interval);
+    }
+  }, [GOOGLE_CLIENT_ID, handleGoogleCredential]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,8 +149,24 @@ const LoginPage = () => {
                   ) : (
                     <Mail className="w-4 h-4 mr-2" />
                   )}
-                  Send Magic Link
+                  {loading ? 'Sending...' : 'Send Magic Link'}
                 </Button>
+                {GOOGLE_CLIENT_ID && (
+                  <div className="relative my-2">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t border-border" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-card px-2 text-muted-foreground">or</span>
+                    </div>
+                  </div>
+                )}
+                {googleLoading && (
+                  <p className="text-sm text-center text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin inline mr-1" />
+                    Signing in with Google...
+                  </p>
+                )}
               </form>
             )}
           </CardContent>
