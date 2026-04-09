@@ -52,88 +52,85 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   const detectRole = async (email: string) => {
-    // 1. Sanitize the email from Google
     const cleanEmail = email.trim().toLowerCase();
     console.log("🔍 AuthContext: Searching for email ->", cleanEmail);
 
     try {
-      // 2. Check students table (Using ilike for case-insensitive match)
-      const { data: student, error: studentError } = await supabase
+      // Safety Timeout: 5 seconds to prevent infinite skeleton if DB hangs
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("DB_TIMEOUT")), 5000)
+      );
+
+      // Check students table
+      const studentPromise = supabase
         .from('students')
         .select('*')
         .ilike('email', cleanEmail)
         .maybeSingle();
 
-      if (studentError) {
-        console.error("❌ AuthContext: Student query error:", studentError);
-      }
+      const { data: student, error: studentError } = await Promise.race([studentPromise, timeout]) as any;
 
       if (student) {
-        console.log("✅ AuthContext: Found Student Record:", student);
+        console.log("✅ AuthContext: Found Student Record");
         setRole('student');
         setStudentData(student);
         setProfData(null);
         return;
       }
 
-      // 3. Check profs table
-      const { data: prof, error: profError } = await supabase
+      // Check profs table
+      const { data: prof } = await supabase
         .from('profs')
         .select('*')
         .ilike('email', cleanEmail)
         .maybeSingle();
 
-      if (profError) {
-        console.error("❌ AuthContext: Professor query error:", profError);
-      }
-
       if (prof) {
-        console.log("✅ AuthContext: Found Professor Record:", prof);
+        console.log("✅ AuthContext: Found Professor Record");
         setRole('professor');
         setProfData(prof);
         setStudentData(null);
         return;
       }
 
-      // 4. No record found
-      console.warn("⚠️ AuthContext: Email not found in either table.");
+      console.warn("⚠️ AuthContext: Email not in database.");
       setRole(null);
-      setStudentData(null);
-      setProfData(null);
-
     } catch (err) {
-      console.error("🔥 AuthContext: Critical failure during detectRole:", err);
-      setRole(null);
+      console.error("🔥 AuthContext Error:", err);
     } finally {
-      // THE FIX: This runs no matter what, forcing the skeleton to disappear!
+      // CRITICAL: Always release the loading screen
+      console.log("🔓 AuthContext: Loading complete.");
       setLoading(false);
     }
   };
 
   useEffect(() => {
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(
-    async (event, session) => {
-      console.log("🔄 Auth Event:", event); // This log will tell you what's happening
-      setSession(session);
-      setUser(session?.user ?? null);
+    // 1. Listen for auth changes (Login/Logout)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, currentSession) => {
+        console.log("🔄 Auth Event:", event);
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
 
-      if (session?.user?.email) {
-        await detectRole(session.user.email);
-      } else {
-        setRole(null);
-        setLoading(false); // Make sure this is here!
+        if (currentSession?.user?.email) {
+          await detectRole(currentSession.user.email);
+        } else {
+          setRole(null);
+          setStudentData(null);
+          setProfData(null);
+          setLoading(false);
+        }
       }
-    }
-  );
-  // ... rest of code
+    );
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user?.email) {
-        await detectRole(session.user.email);
+    // 2. Initial Session Check (Handle page refresh)
+    supabase.auth.getSession().then(async ({ data: { session: initialSession } }) => {
+      if (initialSession?.user?.email) {
+        setSession(initialSession);
+        setUser(initialSession.user);
+        await detectRole(initialSession.user.email);
       } else {
-        setLoading(false); 
+        setLoading(false);
       }
     });
 
@@ -141,12 +138,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setSession(null);
-    setUser(null);
-    setRole(null);
-    setStudentData(null);
-    setProfData(null);
+    try {
+      setLoading(true);
+      await supabase.auth.signOut();
+      setSession(null);
+      setUser(null);
+      setRole(null);
+      setStudentData(null);
+      setProfData(null);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
