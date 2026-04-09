@@ -69,14 +69,11 @@ const ProfessorDashboard = () => {
   const fetchCourses = async () => {
     if (!profData) return;
     setLoading(true);
-
     const { data: courseData } = await supabase
       .from('courses')
       .select('course_code, course_name')
       .eq('prof_id', profData.prof_id);
-
     if (!courseData) { setLoading(false); return; }
-
     const results: Course[] = [];
     for (const c of courseData) {
       const { count } = await supabase
@@ -84,10 +81,8 @@ const ProfessorDashboard = () => {
         .select('*', { count: 'exact', head: true })
         .eq('course_code', c.course_code)
         .eq('status', 'active');
-
       results.push({ ...c, enrolled_count: count || 0 });
     }
-
     setCourses(results);
     setLoading(false);
   };
@@ -98,33 +93,27 @@ const ProfessorDashboard = () => {
     setExpandedStudent(null);
     setStudentAttendance({});
     setRosterSearch('');
-
     const { data: enrollments } = await supabase
       .from('course_enrollments')
       .select('student_id')
       .eq('course_code', course.course_code)
       .eq('status', 'active');
-
     if (!enrollments || enrollments.length === 0) {
       setStudents([]);
       setRosterLoading(false);
       return;
     }
-
     const studentIds = enrollments.map(e => e.student_id);
     const { data: studentData } = await supabase
       .from('students')
       .select('student_id, first_name, last_name, dept, program, year')
       .in('student_id', studentIds);
-
     const { data: allSessions } = await supabase
       .from('attendance')
       .select('session_date')
       .eq('course_code', course.course_code);
-
     const uniqueDates = new Set(allSessions?.map(s => s.session_date) || []);
     const totalClasses = uniqueDates.size;
-
     const rows: StudentRow[] = [];
     for (const s of (studentData || [])) {
       const { data: attended } = await supabase
@@ -132,65 +121,53 @@ const ProfessorDashboard = () => {
         .select('session_date')
         .eq('course_code', course.course_code)
         .eq('student_id', s.student_id);
-
       rows.push({ ...s, attended: attended?.length || 0, total_classes: totalClasses });
     }
-
     setStudents(rows);
     setRosterLoading(false);
   };
 
-  // Toggle Function: Flips status for a specific date
+  // FIXED Toggle Function
   const toggleAttendance = async (studentId: string, date: string, isPresent: boolean) => {
     if (!selectedCourse) return;
 
-    if (isPresent) {
-      // Remove record (Mark Absent)
-      await supabase
-        .from('attendance')
-        .delete()
-        .eq('student_id', studentId)
-        .eq('course_code', selectedCourse.course_code)
-        .eq('session_date', date);
-    } else {
-      // Add record (Mark Present)
-      await supabase.from('attendance').insert({
-        student_id: studentId,
-        course_code: selectedCourse.course_code,
-        session_date: date
-      });
-    }
-
-    // Update local data without full page reload
-    const { data: presentSessions } = await supabase
-      .from('attendance')
-      .select('session_date')
-      .eq('course_code', selectedCourse.course_code)
-      .eq('student_id', studentId);
-
-    const presentDates = new Set(presentSessions?.map(s => s.session_date) || []);
-    
-    // Recalculate logs for this student
-    const { data: allSessions } = await supabase
-      .from('attendance')
-      .select('session_date')
-      .eq('course_code', selectedCourse.course_code);
-    
-    const allDates = [...new Set(allSessions?.map(s => s.session_date) || [])].sort();
-
-    setStudentAttendance(prev => ({
-      ...prev,
-      [studentId]: allDates.map(d => ({ date: d, present: presentDates.has(d) })),
-    }));
-
-    // Update the main list counts/percentages
-    const updatedStudents = students.map(s => {
-      if (s.student_id === studentId) {
-        return { ...s, attended: isPresent ? s.attended - 1 : s.attended + 1 };
+    try {
+      if (isPresent) {
+        // Was Present -> Mark Absent (Delete)
+        const { error } = await supabase
+          .from('attendance')
+          .delete()
+          .eq('student_id', studentId)
+          .eq('course_code', selectedCourse.course_code)
+          .eq('session_date', date);
+        if (error) throw error;
+      } else {
+        // Was Absent -> Mark Present (Insert)
+        const { error } = await supabase.from('attendance').insert({
+          student_id: studentId,
+          course_code: selectedCourse.course_code,
+          session_date: date
+        });
+        if (error) throw error;
       }
-      return s;
-    });
-    setStudents(updatedStudents);
+
+      // Update Local State for immediate UI feedback
+      setStudentAttendance(prev => ({
+        ...prev,
+        [studentId]: prev[studentId].map(r => r.date === date ? { ...r, present: !isPresent } : r)
+      }));
+
+      setStudents(prev => prev.map(s => {
+        if (s.student_id === studentId) {
+          return { ...s, attended: isPresent ? s.attended - 1 : s.attended + 1 };
+        }
+        return s;
+      }));
+
+    } catch (err) {
+      console.error("❌ Toggle Failed:", err);
+      alert("Database error: Could not update attendance.");
+    }
   };
 
   const toggleStudentDetail = async (studentId: string) => {
@@ -255,22 +232,17 @@ const ProfessorDashboard = () => {
       .eq('student_id', student.student_id)
       .eq('course_code', selectedCourse.course_code)
       .maybeSingle();
-
     if (existing) {
       setEnrollError('Student already enrolled.');
       setEnrolling(false);
       return;
     }
-
-    const { error } = await supabase
-      .from('course_enrollments')
-      .insert({
-        student_id: student.student_id,
-        course_code: selectedCourse.course_code,
-        status: 'active',
-        enrolled_date: new Date().toISOString().split('T')[0],
-      });
-
+    const { error } = await supabase.from('course_enrollments').insert({
+      student_id: student.student_id,
+      course_code: selectedCourse.course_code,
+      status: 'active',
+      enrolled_date: new Date().toISOString().split('T')[0],
+    });
     if (error) {
       setEnrollError(error.message);
     } else {
@@ -305,7 +277,6 @@ const ProfessorDashboard = () => {
               <BookOpen className="w-5 h-5 text-muted-foreground" />
               <h2 className="text-lg font-semibold">My Courses</h2>
             </div>
-
             {loading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {[1, 2, 3].map(i => <Skeleton key={i} className="h-36 rounded-xl" />)}
@@ -346,7 +317,7 @@ const ProfessorDashboard = () => {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input 
-                placeholder="Search students in this class..." 
+                placeholder="Search students..." 
                 className="pl-9"
                 value={rosterSearch}
                 onChange={(e) => setRosterSearch(e.target.value)}
@@ -360,7 +331,7 @@ const ProfessorDashboard = () => {
                 const isExpanded = expandedStudent === s.student_id;
                 
                 return (
-                  <Card key={s.student_id} className="border-border/50">
+                  <Card key={s.student_id} className="border-border/50 overflow-hidden">
                     <div className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/30" onClick={() => toggleStudentDetail(s.student_id)}>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-sm truncate">{s.first_name} {s.last_name}</p>
@@ -373,36 +344,33 @@ const ProfessorDashboard = () => {
                     </div>
                     
                     {isExpanded && (
-                      <CardContent className="pt-0 pb-3 px-4 border-t mt-1">
-                        <p className="text-[10px] font-bold uppercase text-muted-foreground mb-2 mt-2">Logs (Tap to toggle status)</p>
+                      <CardContent className="pt-0 pb-3 px-4 border-t bg-muted/5">
+                        <p className="text-[10px] font-bold uppercase text-muted-foreground mb-2 mt-3">Daily History (Click status to toggle)</p>
                         <div className="space-y-1">
                           {!studentAttendance[s.student_id] ? (
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground py-2"><Loader2 className="w-3 h-3 animate-spin" /> Loading...</div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground py-2"><Loader2 className="w-3 h-3 animate-spin" /> Loading logs...</div>
                           ) : studentAttendance[s.student_id].length === 0 ? (
-                            <p className="text-xs text-muted-foreground py-2">No logs found.</p>
+                            <p className="text-xs text-muted-foreground py-2 text-center border border-dashed rounded-md">No class dates found.</p>
                           ) : (
                             studentAttendance[s.student_id].map(r => (
-                              <div 
+                              <button 
                                 key={r.date} 
-                                className="flex items-center justify-between py-2 px-3 rounded-md bg-muted/20 hover:bg-muted/40 cursor-pointer transition-all"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleAttendance(s.student_id, r.date, r.present);
-                                }}
+                                className="w-full flex items-center justify-between py-2.5 px-3 rounded-md border border-border/40 bg-white hover:bg-muted/40 transition-all active:scale-[0.98]"
+                                onClick={() => toggleAttendance(s.student_id, r.date, r.present)}
                               >
-                                <span className="text-xs">
+                                <span className="text-xs font-medium">
                                   {new Date(r.date).toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' })}
                                 </span>
                                 {r.present ? (
-                                  <span className="text-success flex items-center gap-1 text-[10px] font-bold underline decoration-2 underline-offset-4">
-                                    <CheckCircle2 className="w-3 h-3" /> PRESENT
+                                  <span className="text-success flex items-center gap-1.5 text-[10px] font-black uppercase">
+                                    <CheckCircle2 className="w-3.5 h-3.5" /> Present
                                   </span>
                                 ) : (
-                                  <span className="text-destructive flex items-center gap-1 text-[10px] font-bold underline decoration-2 underline-offset-4">
-                                    <XCircle className="w-3 h-3" /> ABSENT
+                                  <span className="text-destructive flex items-center gap-1.5 text-[10px] font-black uppercase">
+                                    <XCircle className="w-3.5 h-3.5" /> Absent
                                   </span>
                                 )}
-                              </div>
+                              </button>
                             ))
                           )}
                         </div>
