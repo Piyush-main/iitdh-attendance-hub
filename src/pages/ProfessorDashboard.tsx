@@ -334,6 +334,8 @@ const ProfessorDashboard = () => {
                 {sortedStudents.map(s => {
                   const pct = s.total_classes > 0 ? (s.attended / s.total_classes) * 100 : 0;
                   const pct = Math.min(Math.round(rawPct), 100);
+
+                  const isExpanded = expandedStudent === s.student_id;
                   return (
                     <Card key={s.student_id} className="border-border/50">
                       <div
