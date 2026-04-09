@@ -52,33 +52,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   const detectRole = async (email: string) => {
+    // FIX: Force loading to true immediately when detection starts
+    setLoading(true);
     const cleanEmail = email.trim().toLowerCase();
     console.log("🔍 AuthContext: Searching for email ->", cleanEmail);
 
     try {
-      // Safety Timeout: 5 seconds to prevent infinite skeleton if DB hangs
       const timeout = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("DB_TIMEOUT")), 5000)
       );
 
-      // Check students table
       const studentPromise = supabase
         .from('students')
         .select('*')
         .ilike('email', cleanEmail)
         .maybeSingle();
 
-      const { data: student, error: studentError } = await Promise.race([studentPromise, timeout]) as any;
+      const { data: student } = await Promise.race([studentPromise, timeout]) as any;
 
       if (student) {
         console.log("✅ AuthContext: Found Student Record");
-        setRole('student');
         setStudentData(student);
         setProfData(null);
+        setRole('student');
         return;
       }
 
-      // Check profs table
       const { data: prof } = await supabase
         .from('profs')
         .select('*')
@@ -87,9 +86,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (prof) {
         console.log("✅ AuthContext: Found Professor Record");
-        setRole('professor');
         setProfData(prof);
         setStudentData(null);
+        setRole('professor');
         return;
       }
 
@@ -98,43 +97,56 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (err) {
       console.error("🔥 AuthContext Error:", err);
     } finally {
-      // CRITICAL: Always release the loading screen
       console.log("🔓 AuthContext: Loading complete.");
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    // 1. Listen for auth changes (Login/Logout)
+    let isMounted = true;
+
+    const initialize = async () => {
+      // 1. Check current session immediately
+      const { data: { session: initialSession } } = await supabase.auth.getSession();
+      
+      if (initialSession?.user?.email && isMounted) {
+        setSession(initialSession);
+        setUser(initialSession.user);
+        // We AWAIT here so loading stays true until detectRole finishes
+        await detectRole(initialSession.user.email);
+      } else if (isMounted) {
+        setLoading(false);
+      }
+    };
+
+    initialize();
+
+    // 2. Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
         console.log("🔄 Auth Event:", event);
-        setSession(currentSession);
-        setUser(currentSession?.user ?? null);
+        
+        if (!isMounted) return;
 
-        if (currentSession?.user?.email) {
-          await detectRole(currentSession.user.email);
-        } else {
+        if (event === 'SIGNED_OUT') {
+          setSession(null);
+          setUser(null);
           setRole(null);
           setStudentData(null);
           setProfData(null);
           setLoading(false);
+        } else if (currentSession?.user?.email) {
+          setSession(currentSession);
+          setUser(currentSession.user);
+          await detectRole(currentSession.user.email);
         }
       }
     );
 
-    // 2. Initial Session Check (Handle page refresh)
-    supabase.auth.getSession().then(async ({ data: { session: initialSession } }) => {
-      if (initialSession?.user?.email) {
-        setSession(initialSession);
-        setUser(initialSession.user);
-        await detectRole(initialSession.user.email);
-      } else {
-        setLoading(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signOut = async () => {
