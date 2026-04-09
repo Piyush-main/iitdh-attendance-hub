@@ -7,7 +7,7 @@ const LoginPage = () => {
   const [error, setError] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '15921660511-vunmi3is6itk6r5r5aqjntus6kintkl4.apps.googleusercontent.com';
 
   const handleGoogleCredential = useCallback(async (response: any) => {
     setGoogleLoading(true);
