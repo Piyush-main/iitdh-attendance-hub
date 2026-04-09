@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react'; // Added useRef
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Fingerprint, Loader2 } from 'lucide-react';
@@ -6,6 +6,7 @@ import { Fingerprint, Loader2 } from 'lucide-react';
 const LoginPage = () => {
   const [error, setError] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
+  const googleButtonRef = useRef<HTMLDivElement>(null); // Ref for the physical button
 
   const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '15921660511-vunmi3is6itk6r5r5aqjntus6kintkl4.apps.googleusercontent.com';
 
@@ -32,7 +33,10 @@ const LoginPage = () => {
 
     const initGoogle = () => {
       if (!(window as any).google?.accounts) return;
-      (window as any).google.accounts.id.initialize({
+      
+      const googleAccounts = (window as any).google.accounts;
+
+      googleAccounts.id.initialize({
         client_id: GOOGLE_CLIENT_ID,
         callback: handleGoogleCredential,
         auto_select: true,
@@ -40,7 +44,20 @@ const LoginPage = () => {
         context: 'signin',
         itp_support: true,
       });
-      (window as any).google.accounts.id.prompt();
+
+      // 1. Render the physical button (This is the fix for mobile/popup blockers)
+      if (googleButtonRef.current) {
+        googleAccounts.id.renderButton(googleButtonRef.current, {
+          theme: 'outline',
+          size: 'large',
+          width: '100%',
+          text: 'signin_with',
+          shape: 'rectangular',
+        });
+      }
+
+      // 2. Still try the automatic prompt
+      googleAccounts.id.prompt();
     };
 
     if ((window as any).google?.accounts) {
@@ -87,15 +104,20 @@ const LoginPage = () => {
                 </div>
               ) : !GOOGLE_CLIENT_ID ? (
                 <p className="text-sm text-destructive font-medium">
-                  Google sign-in is not configured. Please set VITE_GOOGLE_CLIENT_ID.
+                  Google sign-in is not configured.
                 </p>
               ) : (
-                <p className="text-sm text-muted-foreground">
-                  A Google sign-in prompt should appear automatically. If not, check your popup blocker.
-                </p>
+                <div className="space-y-4">
+                  {/* This div will hold the actual Google Button */}
+                  <div ref={googleButtonRef} className="flex justify-center min-h-[40px]" />
+                  
+                  <p className="text-xs text-muted-foreground">
+                    Note: If using a phone, please tap the button above.
+                  </p>
+                </div>
               )}
               {error && (
-                <p className="text-sm text-destructive font-medium">{error}</p>
+                <p className="text-sm text-destructive font-medium mt-2">{error}</p>
               )}
             </div>
           </CardContent>
