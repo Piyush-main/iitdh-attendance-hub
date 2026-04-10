@@ -158,14 +158,13 @@ const ProfessorDashboard = () => {
     const presentDates = new Set(presentSessions?.map(s => s.session_date) || []);
     setStudentAttendance(prev => ({ ...prev, [studentId]: allDates.map(date => ({ date, present: presentDates.has(date) })), }));
   };
-
   const filteredAndSortedStudents = students
-    .filter(s => `${s.first_name} ${s.last_name}`.toLowerCase().includes(rosterSearch.toLowerCase()) || s.student_id.toLowerCase().includes(rosterSearch.toLowerCase()))
-    .sort((a, b) => {
-      const pctA = a.total_classes > 0 ? a.attended / a.total_classes : 0;
-      const pctB = b.total_classes > 0 ? b.attended / b.total_classes : 0;
-      return sortAsc ? pctA - pctB : pctB - pctA;
-    });
+  .filter(s => 
+    `${s.first_name} ${s.last_name}`.toLowerCase().includes(rosterSearch.toLowerCase()) ||
+    s.student_id.toLowerCase().includes(rosterSearch.toLowerCase())
+  )
+  .sort((a, b) => a.first_name.localeCompare(b.first_name));
+  
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
