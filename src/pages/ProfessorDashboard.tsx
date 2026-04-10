@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogOut, BookOpen, Users, UserPlus, ChevronDown, ChevronUp, CheckCircle2, XCircle, Search, ArrowUpDown, Loader2, GraduationCap } from 'lucide-react';
+import { LogOut, BookOpen, Users, UserPlus, ChevronDown, ChevronUp, CheckCircle2, XCircle, Search, Loader2, GraduationCap } from 'lucide-react';
 import AttendanceRing from '@/components/AttendanceRing';
 
 interface Course {
@@ -47,7 +47,6 @@ const ProfessorDashboard = () => {
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [rosterLoading, setRosterLoading] = useState(false);
-  const [sortAsc, setSortAsc] = useState(true);
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
   const [studentAttendance, setStudentAttendance] = useState<Record<string, AttendanceRecord[]>>({});
   const [rosterSearch, setRosterSearch] = useState('');
@@ -158,13 +157,14 @@ const ProfessorDashboard = () => {
     const presentDates = new Set(presentSessions?.map(s => s.session_date) || []);
     setStudentAttendance(prev => ({ ...prev, [studentId]: allDates.map(date => ({ date, present: presentDates.has(date) })), }));
   };
+
+  // Fixed: Filter and PERMANENT alphabetical sort
   const filteredAndSortedStudents = students
-  .filter(s => 
-    `${s.first_name} ${s.last_name}`.toLowerCase().includes(rosterSearch.toLowerCase()) ||
-    s.student_id.toLowerCase().includes(rosterSearch.toLowerCase())
-  )
-  .sort((a, b) => a.first_name.localeCompare(b.first_name));
-  
+    .filter(s => 
+      `${s.first_name} ${s.last_name}`.toLowerCase().includes(rosterSearch.toLowerCase()) || 
+      s.student_id.toLowerCase().includes(rosterSearch.toLowerCase())
+    )
+    .sort((a, b) => a.first_name.localeCompare(b.first_name));
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
@@ -190,9 +190,9 @@ const ProfessorDashboard = () => {
   if (!profData) return null;
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:20px_20px] relative overflow-hidden">
+    <div className="min-h-screen bg-[#f8fafc] bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:20px_20px] relative overflow-hidden text-slate-900">
       
-      {/* Subtle Background Watermark */}
+      {/* Background Watermark */}
       <div className="fixed -bottom-20 -right-20 opacity-[0.03] pointer-events-none rotate-12">
         <GraduationCap size={600} />
       </div>
@@ -228,7 +228,7 @@ const ProfessorDashboard = () => {
 
             {loading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {[1, 2, 3].map(i => <Skeleton key={i} className="h-44 rounded-2xl" />)}
+                {[1, 2, 3].map(i => <Skeleton key={i} className="h-44 rounded-2xl shadow-sm" />)}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -264,9 +264,6 @@ const ProfessorDashboard = () => {
                 </h2>
               </div>
               <div className="flex gap-3">
-                <Button variant="outline" size="sm" onClick={() => setSortAsc(!sortAsc)} className="bg-white rounded-xl border-slate-200">
-                  <ArrowUpDown className="w-4 h-4 mr-2" /> {sortAsc ? 'Low Attendance First' : 'High Attendance First'}
-                </Button>
                 <Button size="sm" onClick={() => setEnrollOpen(true)} className="rounded-xl shadow-lg shadow-primary/20">
                   <UserPlus className="w-4 h-4 mr-2" /> Enroll Student
                 </Button>
@@ -301,12 +298,16 @@ const ProfessorDashboard = () => {
                           <p className="text-xs font-mono text-slate-400">{s.student_id} • {s.attended}/{s.total_classes} Classes Attended</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-6">
+                      
+                      {/* Fixed: Layout for Percentage and Ring to avoid blur/overlap */}
+                      <div className="flex items-center gap-8">
                         <div className="text-right hidden sm:block">
-                          <p className="text-xs font-bold text-slate-400 uppercase tracking-tighter">Attendance</p>
-                          <p className={`text-lg font-black ${pct < 75 ? 'text-destructive' : 'text-success'}`}>{pct}%</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Attendance</p>
+                          <p className={`text-lg font-black ${pct < 75 ? 'text-red-500' : 'text-emerald-600'}`}>{pct}%</p>
                         </div>
-                        <AttendanceRing percentage={pct} size={50} strokeWidth={5} />
+                        <div className="relative flex items-center justify-center w-[50px] h-[50px]">
+                           <AttendanceRing percentage={pct} size={50} strokeWidth={5} />
+                        </div>
                         {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-300" /> : <ChevronDown className="w-5 h-5 text-slate-300" />}
                       </div>
                     </div>
@@ -360,6 +361,7 @@ const ProfessorDashboard = () => {
         )}
       </main>
 
+      {/* Enroll Dialog */}
       <Dialog open={enrollOpen} onOpenChange={setEnrollOpen}>
         <DialogContent className="rounded-3xl border-none shadow-2xl">
           <DialogHeader><DialogTitle className="text-xl font-black">Enroll New Student</DialogTitle></DialogHeader>
@@ -382,9 +384,6 @@ const ProfessorDashboard = () => {
                   </Button>
                 </div>
               ))}
-              {searchQuery.length >= 2 && searchResults.length === 0 && !searchLoading && (
-                <p className="text-center py-8 text-xs text-slate-400 italic">No students found matching "{searchQuery}"</p>
-              )}
             </div>
           </div>
         </DialogContent>
