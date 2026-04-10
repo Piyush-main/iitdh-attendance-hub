@@ -129,47 +129,58 @@ const ProfessorDashboard = () => {
 
   // FIXED Toggle Function
   const toggleAttendance = async (studentId: string, date: string, isPresent: boolean) => {
-    if (!selectedCourse) return;
+  if (!selectedCourse || !profData) return;
 
-    try {
-      if (isPresent) {
-        // Was Present -> Mark Absent (Delete)
-        const { error } = await supabase
-          .from('attendance')
-          .delete()
-          .eq('student_id', studentId)
-          .eq('course_code', selectedCourse.course_code)
-          .eq('session_date', date);
-        if (error) throw error;
-      } else {
-        // Was Absent -> Mark Present (Insert)
-        const { error } = await supabase.from('attendance').insert({
-          student_id: studentId,
-          course_code: selectedCourse.course_code,
-          session_date: date
-        });
-        if (error) throw error;
-      }
-
-      // Update Local State for immediate UI feedback
-      setStudentAttendance(prev => ({
-        ...prev,
-        [studentId]: prev[studentId].map(r => r.date === date ? { ...r, present: !isPresent } : r)
-      }));
-
-      setStudents(prev => prev.map(s => {
-        if (s.student_id === studentId) {
-          return { ...s, attended: isPresent ? s.attended - 1 : s.attended + 1 };
-        }
-        return s;
-      }));
-
-    } catch (err) {
-      console.error("❌ Toggle Failed:", err);
-      alert("Database error: Could not update attendance.");
+  try {
+    if (isPresent) {
+      // DELETE
+      const { error } = await supabase
+        .from('attendance')
+        .delete()
+        .eq('student_id', studentId)
+        .eq('course_code', selectedCourse.course_code)
+        // Use the exact name from your schema: session_date
+        .eq('session_date', date);
+      
+      if (error) throw error;
+    } else {
+      // INSERT
+      const { error } = await supabase.from('attendance').insert({
+        student_id: studentId,
+        course_code: selectedCourse.course_code,
+        session_date: date,
+        authorized_by: profData.prof_id // Adding this since it's a FK in your schema
+      });
+      
+      if (error) throw error;
     }
-  };
 
+    // Update UI state
+    setStudentAttendance(prev => {
+      const currentLogs = prev[studentId] || [];
+      return {
+        ...prev,
+        [studentId]: currentLogs.map(log => 
+          log.date === date ? { ...log, present: !isPresent } : log
+        )
+      };
+    });
+
+    setStudents(prev => prev.map(s => {
+      if (s.student_id === studentId) {
+        return { 
+          ...s, 
+          attended: isPresent ? Math.max(0, s.attended - 1) : s.attended + 1 
+        };
+      }
+      return s;
+    }));
+
+  } catch (err) {
+    console.error("❌ Toggle failed. Check column names:", err);
+    alert("Database Error. Please check if 'session_date' is the correct column name.");
+  }
+};
   const toggleStudentDetail = async (studentId: string) => {
     if (expandedStudent === studentId) {
       setExpandedStudent(null);
