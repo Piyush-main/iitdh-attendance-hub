@@ -139,7 +139,7 @@ const StudentDashboard = () => {
               <GraduationCap className="text-white w-8 h-8" />
             </div>
             <div>
-              <p className="text-[10px] opacity-60 uppercase tracking-[0.3em] font-bold">IIT Dharwad • Student Portal</p>
+              <p className="text-[10px] opacity-60 uppercase tracking-[0.3em] font-bold text-blue-100">IIT Dharwad • Student Portal</p>
               <h1 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">
                 {studentData.first_name} {studentData.last_name}
               </h1>
@@ -170,7 +170,7 @@ const StudentDashboard = () => {
           <Card className="border-dashed border-2 bg-transparent">
             <CardContent className="py-20 text-center">
               <BookOpen className="w-16 h-16 mx-auto text-slate-200 mb-4" />
-              <p className="text-slate-400 font-medium">You haven't been enrolled in any courses yet.</p>
+              <p className="text-slate-400 font-medium text-lg">You haven't been enrolled in any courses yet.</p>
             </CardContent>
           </Card>
         ) : (
@@ -184,9 +184,9 @@ const StudentDashboard = () => {
                   className="group cursor-pointer bg-white/80 backdrop-blur-md border border-white shadow-sm hover:shadow-2xl hover:-translate-y-1.5 transition-all duration-300 rounded-3xl overflow-hidden"
                   onClick={() => openDetail(course)}
                 >
-                  <div className={`h-1.5 w-full ${pct < 75 ? 'bg-destructive/40' : 'bg-success/40'} group-hover:opacity-100 transition-opacity`} />
+                  <div className={`h-1.5 w-full ${pct < 75 ? 'bg-red-500' : 'bg-emerald-500'} transition-colors`} />
                   <CardHeader className="pb-2">
-                    <p className="text-[10px] font-black font-mono text-primary/50 tracking-widest uppercase">{course.course_code}</p>
+                    <p className="text-[10px] font-black font-mono text-primary/60 tracking-widest uppercase">{course.course_code}</p>
                     <CardTitle className="text-lg font-extrabold text-slate-800 line-clamp-1">{course.course_name}</CardTitle>
                     <p className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
                       <Clock className="w-3 h-3" /> {course.prof_name}
@@ -199,10 +199,14 @@ const StudentDashboard = () => {
                         {course.attended}<span className="text-slate-300 mx-1">/</span>{course.total_classes}
                       </p>
                     </div>
-                    <div className="relative">
-                      <AttendanceRing percentage={pct} size={54} strokeWidth={6} />
-                      <div className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-slate-600">
-                        {pct}%
+                    
+                    {/* Centered Ring with Fixed Text Positioning */}
+                    <div className="relative flex items-center justify-center w-[60px] h-[60px]">
+                      <AttendanceRing percentage={pct} size={60} strokeWidth={6} />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-[11px] font-black text-slate-600 leading-none">
+                          {pct}%
+                        </span>
                       </div>
                     </div>
                   </CardContent>
@@ -213,13 +217,14 @@ const StudentDashboard = () => {
         )}
       </main>
 
+      {/* Detail Modal */}
       <Dialog open={!!selectedCourse} onOpenChange={(open) => !open && setSelectedCourse(null)}>
         <DialogContent className="max-w-md rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden">
           <div className="bg-slate-900 p-8 text-white relative">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl" />
-            <DialogHeader className="relative z-10">
+            <DialogHeader className="relative z-10 text-left">
               <p className="text-[10px] font-black text-primary tracking-[0.3em] uppercase mb-2">{selectedCourse?.course_code}</p>
-              <DialogTitle className="text-2xl font-black leading-tight">
+              <DialogTitle className="text-2xl font-black leading-tight text-white">
                 {selectedCourse?.course_name}
               </DialogTitle>
               <p className="text-slate-400 text-sm mt-1">{selectedCourse?.prof_name}</p>
@@ -252,14 +257,14 @@ const StudentDashboard = () => {
                       </span>
                     </div>
                     {record.present ? (
-                      <div className="bg-success/10 px-4 py-1.5 rounded-full flex items-center gap-2 border border-success/20">
-                        <CheckCircle2 className="w-4 h-4 text-success" />
-                        <span className="text-[10px] font-black text-success uppercase tracking-widest">Present</span>
+                      <div className="bg-emerald-50 px-4 py-1.5 rounded-full flex items-center gap-2 border border-emerald-100">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest leading-none pt-0.5">Present</span>
                       </div>
                     ) : (
-                      <div className="bg-destructive/10 px-4 py-1.5 rounded-full flex items-center gap-2 border border-destructive/20">
-                        <XCircle className="w-4 h-4 text-destructive" />
-                        <span className="text-[10px] font-black text-destructive uppercase tracking-widest">Absent</span>
+                      <div className="bg-red-50 px-4 py-1.5 rounded-full flex items-center gap-2 border border-red-100">
+                        <XCircle className="w-4 h-4 text-red-600" />
+                        <span className="text-[10px] font-black text-red-600 uppercase tracking-widest leading-none pt-0.5">Absent</span>
                       </div>
                     )}
                   </div>
@@ -268,7 +273,7 @@ const StudentDashboard = () => {
             )}
           </div>
           <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-center">
-            <Button variant="ghost" className="text-slate-400 text-xs font-bold uppercase tracking-widest" onClick={() => setSelectedCourse(null)}>
+            <Button variant="ghost" className="text-slate-400 text-xs font-bold uppercase tracking-widest hover:text-primary transition-colors" onClick={() => setSelectedCourse(null)}>
               Close Details
             </Button>
           </div>
