@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogOut, BookOpen, Users, UserPlus, ChevronDown, ChevronUp, CheckCircle2, XCircle, Search, Loader2, GraduationCap } from 'lucide-react';
+import { LogOut, BookOpen, Users, UserPlus, ChevronDown, ChevronUp, CheckCircle2, XCircle, Search, Loader2, GraduationCap, UserMinus } from 'lucide-react';
 import AttendanceRing from '@/components/AttendanceRing';
 
 interface Course {
@@ -147,6 +147,30 @@ const ProfessorDashboard = () => {
     }
   };
 
+  const denrollStudent = async (studentId: string) => {
+    if (!selectedCourse) return;
+    const confirmDenroll = window.confirm("Are you sure you want to denroll this student? This will remove them from the course roster.");
+    
+    if (!confirmDenroll) return;
+
+    try {
+      const { error } = await supabase
+        .from('course_enrollments')
+        .delete()
+        .eq('student_id', studentId)
+        .eq('course_code', selectedCourse.course_code);
+
+      if (error) throw error;
+
+      // Refresh current view
+      openCourseDetail(selectedCourse);
+      fetchCourses();
+    } catch (err) {
+      console.error("❌ Denroll failed:", err);
+      alert("Failed to denroll student. Please try again.");
+    }
+  };
+
   const toggleStudentDetail = async (studentId: string) => {
     if (expandedStudent === studentId) { setExpandedStudent(null); return; }
     setExpandedStudent(studentId);
@@ -158,7 +182,6 @@ const ProfessorDashboard = () => {
     setStudentAttendance(prev => ({ ...prev, [studentId]: allDates.map(date => ({ date, present: presentDates.has(date) })), }));
   };
 
-  // Fixed: Filter and PERMANENT alphabetical sort
   const filteredAndSortedStudents = students
     .filter(s => 
       `${s.first_name} ${s.last_name}`.toLowerCase().includes(rosterSearch.toLowerCase()) || 
@@ -192,7 +215,6 @@ const ProfessorDashboard = () => {
   return (
     <div className="min-h-screen bg-[#f8fafc] bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:20px_20px] relative overflow-hidden text-slate-900">
       
-      {/* Background Watermark */}
       <div className="fixed -bottom-20 -right-20 opacity-[0.03] pointer-events-none rotate-12">
         <GraduationCap size={600} />
       </div>
@@ -299,7 +321,6 @@ const ProfessorDashboard = () => {
                         </div>
                       </div>
                       
-                      {/* Fixed: Layout for Percentage and Ring to avoid blur/overlap */}
                       <div className="flex items-center gap-8">
                         <div className="text-right hidden sm:block">
                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Attendance</p>
@@ -316,7 +337,18 @@ const ProfessorDashboard = () => {
                       <CardContent className="pt-0 pb-6 px-6 border-t border-slate-100 bg-slate-50/50">
                         <div className="flex items-center justify-between mb-4 mt-5">
                           <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Attendance Logs • Tap to Toggle</p>
-                          <div className="h-[1px] flex-1 bg-slate-200 ml-4" />
+                          <div className="h-[1px] flex-1 bg-slate-200 ml-4 mr-4" />
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-7 text-[10px] font-bold text-destructive hover:text-destructive hover:bg-destructive/10 rounded-lg px-3"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              denrollStudent(s.student_id);
+                            }}
+                          >
+                            <UserMinus className="w-3 h-3 mr-1" /> Denroll Student
+                          </Button>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                           {!studentAttendance[s.student_id] ? (
@@ -361,7 +393,6 @@ const ProfessorDashboard = () => {
         )}
       </main>
 
-      {/* Enroll Dialog */}
       <Dialog open={enrollOpen} onOpenChange={setEnrollOpen}>
         <DialogContent className="rounded-3xl border-none shadow-2xl">
           <DialogHeader><DialogTitle className="text-xl font-black">Enroll New Student</DialogTitle></DialogHeader>
