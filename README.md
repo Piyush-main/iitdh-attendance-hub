@@ -1,1 +1,1 @@
-# Welcome to IITDH-SYSTEM Biometric Attendance System
+# Welcome to IITDH Biometric Attendance System
